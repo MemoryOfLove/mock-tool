@@ -19,19 +19,108 @@ interface Props {
 // ===== 小组件 =====
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <label className="block text-sm font-medium text-gray-700 mb-1">{children}</label>
+  return <label className="mb-1.5 block text-sm font-semibold text-slate-700">{children}</label>
 }
 
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`w-full px-2 py-1.5 text-sm border rounded focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 ${props.className ?? ''}`} />
+  return (
+    <input
+      {...props}
+      className={`h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 ${props.className ?? ''}`}
+    />
+  )
 }
 
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement> & { children: React.ReactNode }) {
-  return <select {...props} className={`px-2 py-1.5 text-sm border rounded focus:ring-1 focus:ring-indigo-400 ${props.className ?? ''}`} />
+  return (
+    <select
+      {...props}
+      className={`h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 ${props.className ?? ''}`}
+    />
+  )
 }
 
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={`w-full px-2 py-1.5 text-sm border rounded font-mono focus:ring-1 focus:ring-indigo-400 ${props.className ?? ''}`} />
+  return (
+    <textarea
+      {...props}
+      className={`w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 ${props.className ?? ''}`}
+    />
+  )
+}
+
+function Section({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-5 py-4">
+        <h3 className="text-base font-semibold text-slate-950">{title}</h3>
+      </div>
+      <div className="space-y-4 px-5 py-5">{children}</div>
+    </section>
+  )
+}
+
+function JsonEditor({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}) {
+  const [jsonError, setJsonError] = useState<string | null>(null)
+
+  const handleChange = (v: string) => {
+    onChange(v)
+    if (!v.trim()) { setJsonError(null); return }
+    try { JSON.parse(v); setJsonError(null) } catch (e: unknown) { setJsonError((e as Error).message) }
+  }
+
+  const format = () => {
+    try {
+      onChange(JSON.stringify(JSON.parse(value), null, 2))
+      setJsonError(null)
+    } catch {}
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="rounded bg-slate-100 px-2 py-1 font-mono text-xs font-medium text-slate-500">JSON</span>
+        <button
+          type="button"
+          onClick={format}
+          className="rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 transition hover:bg-indigo-100 active:scale-95"
+        >
+          格式化
+        </button>
+      </div>
+      <textarea
+        value={value}
+        onChange={e => handleChange(e.target.value)}
+        placeholder={placeholder}
+        rows={14}
+        spellCheck={false}
+        className={`min-h-[220px] w-full resize-y rounded-md border px-3 py-2.5 font-mono text-sm shadow-sm transition-colors duration-150 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 ${
+          jsonError ? 'border-rose-400 bg-rose-50/50' : 'border-slate-300 bg-white'
+        }`}
+      />
+      <div
+        className={`overflow-hidden transition-all duration-200 ${
+          jsonError ? 'max-h-10 opacity-100 mt-1' : 'max-h-0 opacity-0'
+        }`}
+      >
+        <p className="text-xs text-rose-600">JSON 解析失败：{jsonError}</p>
+      </div>
+    </div>
+  )
 }
 
 // ===== KeyValue 条件编辑 =====
@@ -46,22 +135,29 @@ function KVConditionEditor({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
+      <div className="mb-2 flex items-center justify-between">
         <Label>{label}</Label>
-        <button type="button" onClick={add} className="text-xs text-indigo-500 hover:underline">+ 添加</button>
+        <button type="button" onClick={add} className="rounded-md px-2 py-1 text-xs font-medium text-indigo-600 transition hover:bg-indigo-50">+ 添加</button>
       </div>
-      {conditions.map((c, i) => (
-        <div key={i} className="flex gap-1.5 mb-1.5">
-          <Input placeholder="Key" value={c.key} onChange={e => update(i, { key: e.target.value })} className="!w-28" />
-          <Select value={c.operator} onChange={e => update(i, { operator: e.target.value as KeyValueCondition['operator'] })}>
-            {KV_OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
-          </Select>
-          {c.operator !== 'exists' && (
-            <Input placeholder="Value" value={c.value ?? ''} onChange={e => update(i, { value: e.target.value })} className="flex-1" />
-          )}
-          <button type="button" onClick={() => remove(i)} className="text-red-400 hover:text-red-600 px-1">×</button>
-        </div>
-      ))}
+      <div className="space-y-2">
+        {conditions.length === 0 && (
+          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-400">未配置</div>
+        )}
+        {conditions.map((c, i) => (
+          <div key={i} className="grid gap-2 md:grid-cols-[9rem_10rem_minmax(0,1fr)_2.5rem]">
+            <Input placeholder="Key" value={c.key} onChange={e => update(i, { key: e.target.value })} />
+            <Select value={c.operator} onChange={e => update(i, { operator: e.target.value as KeyValueCondition['operator'] })}>
+              {KV_OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
+            </Select>
+            {c.operator !== 'exists' ? (
+              <Input placeholder="Value" value={c.value ?? ''} onChange={e => update(i, { value: e.target.value })} />
+            ) : (
+              <div className="hidden md:block" />
+            )}
+            <button type="button" onClick={() => remove(i)} className="h-10 rounded-md text-lg text-rose-500 transition hover:bg-rose-50 hover:text-rose-600">×</button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -104,21 +200,25 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
   const delayMod = getMod<DelayMod>('delay')
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-800">
-          {initial.name ? '编辑规则' : '新建规则'}
-        </h2>
-        <div className="flex gap-2">
-          <button onClick={onCancel} className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50">取消</button>
-          <button onClick={() => onSave(rule)} className="px-3 py-1.5 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600">保存</button>
+    <div className="space-y-5">
+      <div className="sticky top-0 z-10 -mx-6 -mt-8 border-b border-slate-200 bg-slate-50/90 px-6 py-5 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="mb-1 text-xs font-semibold uppercase text-indigo-500">Rule Editor</p>
+            <h2 className="truncate text-2xl font-semibold text-slate-950">
+              {initial.name ? '编辑规则' : '新建规则'}
+            </h2>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button onClick={onCancel} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50">取消</button>
+            <button onClick={() => onSave(rule)} className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800">保存</button>
+          </div>
         </div>
       </div>
 
       {/* 基本信息 */}
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-gray-600 border-b pb-1">基本信息</h3>
-        <div className="grid grid-cols-2 gap-3">
+      <Section title="基本信息">
+        <div className="grid gap-4 md:grid-cols-2">
           <div>
             <Label>规则名称</Label>
             <Input value={rule.name} onChange={e => setRule(r => ({ ...r, name: e.target.value }))} placeholder="例：Mock 用户接口" />
@@ -128,29 +228,34 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
             <Input type="number" value={rule.priority} onChange={e => setRule(r => ({ ...r, priority: Number(e.target.value) }))} />
           </div>
         </div>
-      </section>
+      </Section>
 
       {/* 匹配条件 */}
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-gray-600 border-b pb-1">匹配条件</h3>
-
+      <Section title="匹配条件">
         {/* URL */}
         <div>
           <Label>URL 匹配</Label>
-          <div className="flex gap-2">
+          <div className="grid gap-2 md:grid-cols-[12rem_minmax(0,1fr)]">
             <Select value={mc.url?.type ?? 'contains'} onChange={e => setUrl({ type: e.target.value as UrlMatchCondition['type'] })}>
               {URL_MATCH_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </Select>
-            <Input value={mc.url?.value ?? ''} onChange={e => setUrl({ value: e.target.value })} placeholder="https://api.example.com/*" className="flex-1" />
+            <Input value={mc.url?.value ?? ''} onChange={e => setUrl({ value: e.target.value })} placeholder="https://api.example.com/*" />
           </div>
         </div>
 
         {/* Methods */}
         <div>
           <Label>请求方法（不选 = 全部）</Label>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex flex-wrap gap-2">
             {HTTP_METHODS.map(m => (
-              <label key={m} className="flex items-center gap-1 text-sm">
+              <label
+                key={m}
+                className={`inline-flex h-9 cursor-pointer items-center rounded-md border px-3 text-sm font-medium transition ${
+                  mc.methods?.includes(m)
+                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
                 <input
                   type="checkbox"
                   checked={mc.methods?.includes(m) ?? false}
@@ -158,6 +263,7 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
                     const current = mc.methods ?? []
                     setMC({ methods: e.target.checked ? [...current, m] : current.filter(x => x !== m) })
                   }}
+                  className="sr-only"
                 />
                 {m}
               </label>
@@ -189,36 +295,43 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
             >
               {BODY_MATCH_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </Select>
-            <Input
-              value={mc.requestBody?.expression ?? ''}
-              onChange={e => setMC({ requestBody: { ...(mc.requestBody ?? { type: 'contains', expression: '' }), expression: e.target.value } })}
-              placeholder={mc.requestBody?.type === 'jsonpath' ? '$.data.userId' : '匹配表达式'}
-              className="flex-1"
-            />
           </div>
+          <Textarea
+            rows={4}
+            value={mc.requestBody?.expression ?? ''}
+            onChange={e => setMC({ requestBody: { ...(mc.requestBody ?? { type: 'contains', expression: '' }), expression: e.target.value } })}
+            placeholder={mc.requestBody?.type === 'jsonpath' ? '$.data.userId' : '匹配表达式'}
+            className="min-h-[96px] resize-y font-mono"
+          />
           {mc.requestBody?.type === 'jsonpath' && (
             <Input
               value={mc.requestBody?.expectedValue ?? ''}
               onChange={e => setMC({ requestBody: { ...mc.requestBody!, expectedValue: e.target.value } })}
               placeholder="期望值（可选）"
+              className="mt-2"
             />
           )}
         </div>
-      </section>
+      </Section>
 
       {/* 响应修改 */}
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-gray-600 border-b pb-1">响应修改</h3>
-
+      <Section title="响应修改">
         {/* 修改类型开关 */}
-        <div className="flex gap-3 flex-wrap">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { type: 'replaceBody', label: '替换响应体' },
             { type: 'modifyJsonFields', label: '修改 JSON 字段' },
             { type: 'statusCode', label: '状态码' },
             { type: 'delay', label: '延迟' },
           ].map(({ type, label }) => (
-            <label key={type} className="flex items-center gap-1.5 text-sm">
+            <label
+              key={type}
+              className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition ${
+                hasMod(type)
+                  ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
               <input
                 type="checkbox"
                 checked={hasMod(type)}
@@ -232,6 +345,7 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
                     removeMod(type)
                   }
                 }}
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
               />
               {label}
             </label>
@@ -240,12 +354,11 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
 
         {/* 替换响应体 */}
         {replaceMod && (
-          <div>
+          <div className="animate-fade-in rounded-lg border border-slate-200 bg-slate-50/60 p-4">
             <Label>响应体内容</Label>
-            <Textarea
-              rows={8}
+            <JsonEditor
               value={replaceMod.body}
-              onChange={e => setMod({ ...replaceMod, body: e.target.value })}
+              onChange={v => setMod({ ...replaceMod, body: v })}
               placeholder='{"code": 0, "data": {...}}'
             />
             <div className="mt-1.5">
@@ -260,19 +373,19 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
 
         {/* 修改 JSON 字段 */}
         {modifyMod && (
-          <div>
-            <div className="flex items-center justify-between mb-1">
+          <div className="animate-fade-in rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+            <div className="mb-2 flex items-center justify-between">
               <Label>JSON 字段修改</Label>
               <button
                 type="button"
                 onClick={() => setMod({ ...modifyMod, modifications: [...modifyMod.modifications, { path: '', action: 'set', value: '' }] })}
-                className="text-xs text-indigo-500 hover:underline"
+                className="rounded-md px-2 py-1 text-xs font-medium text-indigo-600 transition hover:bg-indigo-50"
               >
                 + 添加
               </button>
             </div>
             {modifyMod.modifications.map((m, i) => (
-              <div key={i} className="flex gap-1.5 mb-1.5">
+              <div key={i} className="mb-2 grid gap-2 md:grid-cols-[12rem_9rem_minmax(0,1fr)_2.5rem]">
                 <Input
                   placeholder="$.data.name"
                   value={m.path}
@@ -281,7 +394,6 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
                     next[i] = { ...next[i], path: e.target.value }
                     setMod({ ...modifyMod, modifications: next })
                   }}
-                  className="!w-40"
                 />
                 <Select
                   value={m.action}
@@ -305,13 +417,12 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
                       next[i] = { ...next[i], value: val }
                       setMod({ ...modifyMod, modifications: next })
                     }}
-                    className="flex-1"
                   />
                 )}
                 <button
                   type="button"
                   onClick={() => setMod({ ...modifyMod, modifications: modifyMod.modifications.filter((_, idx) => idx !== i) })}
-                  className="text-red-400 hover:text-red-600 px-1"
+                  className="h-10 rounded-md text-lg text-rose-500 transition hover:bg-rose-50 hover:text-rose-600"
                 >
                   ×
                 </button>
@@ -322,7 +433,7 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
 
         {/* 状态码 */}
         {statusMod && (
-          <div>
+          <div className="animate-fade-in rounded-lg border border-slate-200 bg-slate-50/60 p-4">
             <Label>HTTP 状态码</Label>
             <Input
               type="number"
@@ -335,7 +446,7 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
 
         {/* 延迟 */}
         {delayMod && (
-          <div>
+          <div className="animate-fade-in rounded-lg border border-slate-200 bg-slate-50/60 p-4">
             <Label>延迟（毫秒）</Label>
             <Input
               type="number"
@@ -345,7 +456,7 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
             />
           </div>
         )}
-      </section>
+      </Section>
     </div>
   )
 }

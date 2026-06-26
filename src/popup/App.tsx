@@ -1,13 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { GlobalState, MockRule } from '../shared/types'
-import { getState, setGlobalEnabled, toggleRule } from '../shared/storage'
+import { getState, setGlobalEnabled, toggleRule, updateRule } from '../shared/storage'
+import RuleEditor from '../options/RuleEditor'
 
 export default function App() {
   const [state, setState] = useState<GlobalState>({ enabled: true, rules: [] })
   const [matchLog, setMatchLog] = useState<Array<{ ruleName: string; url: string; time: string }>>([])
+  const [editingRule, setEditingRule] = useState<MockRule | null>(null)
+
+  const refresh = useCallback(async () => {
+    setState(await getState())
+  }, [])
 
   useEffect(() => {
-    getState().then(setState)
+    refresh()
 
     const listener = (message: { type: string; payload?: unknown }) => {
       if (message.type === 'RULE_MATCHED') {
@@ -20,7 +26,7 @@ export default function App() {
     }
     chrome.runtime.onMessage.addListener(listener)
     return () => chrome.runtime.onMessage.removeListener(listener)
-  }, [])
+  }, [refresh])
 
   const handleGlobalToggle = async () => {
     const next = !state.enabled
@@ -30,12 +36,29 @@ export default function App() {
 
   const handleToggleRule = async (id: string) => {
     await toggleRule(id)
-    const fresh = await getState()
-    setState(fresh)
+    await refresh()
+  }
+
+  const handleSaveRule = async (rule: MockRule) => {
+    await updateRule({ ...rule, updatedAt: Date.now() })
+    setEditingRule(null)
+    await refresh()
   }
 
   const openOptions = () => {
     chrome.runtime.openOptionsPage()
+  }
+
+  if (editingRule) {
+    return (
+      <div className="w-[28rem] max-h-[36rem] overflow-y-auto bg-white p-4 text-sm">
+        <RuleEditor
+          rule={editingRule}
+          onSave={handleSaveRule}
+          onCancel={() => setEditingRule(null)}
+        />
+      </div>
+    )
   }
 
   return (
@@ -61,19 +84,29 @@ export default function App() {
           <div className="text-gray-400 text-center py-4">暂无规则</div>
         ) : (
           state.rules.map(rule => (
-            <div key={rule.id} className="flex items-center justify-between p-2 rounded bg-gray-50 hover:bg-gray-100">
-              <div className="flex-1 min-w-0 mr-2">
-                <div className="font-medium text-gray-700 truncate">{rule.name}</div>
-                <div className="text-xs text-gray-400 truncate">
-                  {rule.matchCondition.url?.value ?? '(无 URL 条件)'}
+            <div key={rule.id} className="rounded bg-gray-50 p-2 hover:bg-gray-100">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-gray-700 truncate">{rule.name}</div>
+                  <div className="text-xs text-gray-400 truncate">
+                    {rule.matchCondition.url?.value ?? '(无 URL 条件)'}
+                  </div>
                 </div>
+                <button
+                  onClick={() => handleToggleRule(rule.id)}
+                  className={`mt-0.5 shrink-0 w-8 h-4 rounded-full transition-colors ${rule.enabled ? 'bg-indigo-400' : 'bg-gray-300'}`}
+                >
+                  <span className={`block w-3 h-3 bg-white rounded-full shadow transition-transform ml-0.5 ${rule.enabled ? 'translate-x-4' : ''}`} />
+                </button>
               </div>
-              <button
-                onClick={() => handleToggleRule(rule.id)}
-                className={`shrink-0 w-8 h-4 rounded-full transition-colors ${rule.enabled ? 'bg-indigo-400' : 'bg-gray-300'}`}
-              >
-                <span className={`block w-3 h-3 bg-white rounded-full shadow transition-transform ml-0.5 ${rule.enabled ? 'translate-x-4' : ''}`} />
-              </button>
+              <div className="mt-2 flex justify-end">
+                <button
+                  onClick={() => setEditingRule({ ...rule })}
+                  className="rounded px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
+                >
+                  编辑
+                </button>
+              </div>
             </div>
           ))
         )}
