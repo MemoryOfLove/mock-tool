@@ -5,6 +5,8 @@ Mock Tool 是一个基于 Chrome Extension Manifest V3 的接口 Mock 调试工�
 适合在前端联调、异常场景验证、接口未完成、灰度数据构造等场景中使用。
 
 ## 功能特性
+<img width="2874" height="1274" alt="image" src="https://github.com/user-attachments/assets/49e91fb5-71f3-494c-ae40-ea18ab955825" />
+<img width="2490" height="1412" alt="image" src="https://github.com/user-attachments/assets/6cf9bc3b-0c2b-4288-a4e5-a7b0eaeb6cc6" />
 
 - 支持全局启用/停用 Mock。
 - 支持单条规则启用/停用。
@@ -382,6 +384,8 @@ Chrome content script 运行在隔离世界，直接覆盖 `window.fetch` 不一
 - 简易 JSONPath 只支持基础对象路径和数组下标。
 - `modifyJsonFields` 依赖真实响应可被解析为 JSON。
 - XHR 拦截通过重写实例属性模拟响应，复杂场景下可能受浏览器只读属性限制影响。
+## Friendly Links
+[Linux.do](https://linux.do/)
 
 ## License
 
