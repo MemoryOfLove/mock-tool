@@ -59,10 +59,15 @@ function matchKeyValue(
 
 /** 简易 JSONPath 取值：支持 $.a.b.c 和 $.a[0].b 格式 */
 export function getByPath(obj: unknown, path: string): unknown {
-  const parts = path
-    .replace(/^\$\.?/, "")
-    .replace(/\[(\d+)\]/g, ".$1")
-    .split(".");
+  if (path === '$' || path === '') return obj;
+  const parts: string[] = [];
+  const tokenRe = /(?:^\$)|(?:\.([A-Za-z_$][\w$]*))|(?:\[['"]([^'\"]+)['"]\])|(?:\[(\d+)\])/g;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(path))) {
+    const key = match[1] ?? match[2] ?? match[3];
+    if (key != null) parts.push(key);
+  }
+  if (!parts.length) return undefined;
   let current: unknown = obj;
   for (const part of parts) {
     if (current == null || typeof current !== "object") return undefined;
@@ -81,8 +86,7 @@ function matchBody(condition: BodyMatchCondition, body: string): boolean {
       case "jsonpath": {
         const parsed = JSON.parse(body);
         const value = getByPath(parsed, condition.expression);
-        console.log("🚀 ~ matchBody ~ value:", value);
-        return condition.expectedValue != null
+        return condition.expectedValue != null && condition.expectedValue !== ""
           ? String(value) === condition.expectedValue
           : value !== undefined;
       }
@@ -121,8 +125,7 @@ export function findMatchingRule(
     if (
       mc.requestBody &&
       mc.requestBody.expression &&
-      request.body &&
-      !matchBody(mc.requestBody, request.body)
+      (!request.body || !matchBody(mc.requestBody, request.body))
     )
       continue;
     return rule;

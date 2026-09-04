@@ -4,6 +4,7 @@ import type {
   UrlMatchCondition, KeyValueCondition, BodyMatchCondition,
   ReplaceBodyMod, ModifyJsonFieldsMod, StatusCodeMod, DelayMod,
 } from '../shared/types'
+import { parseCurl } from '../shared/curl-parser'
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const URL_MATCH_TYPES: UrlMatchCondition['type'][] = ['contains', 'equals', 'wildcard', 'regex']
@@ -47,6 +48,33 @@ function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
       className={`w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 ${props.className ?? ''}`}
     />
   )
+}
+
+function JsonPathTree({ value, onSelect }: { value: unknown; onSelect: (path: string, node: unknown) => void }) {
+  const childPathFor = (path: string, key: string, array: boolean) => {
+    if (array) return `${path}[${key}]`
+    return /^[A-Za-z_$][\w$]*$/.test(key) ? `${path}.${key}` : `${path}['${key.replace(/'/g, "\\'")}']`
+  }
+  const render = (node: unknown, path: string, label: string): React.ReactNode => {
+    const primitive = node === null || typeof node !== 'object'
+    return (
+      <div key={path} className="ml-3 border-l border-slate-200 pl-2">
+        <button
+          type="button"
+          onClick={() => onSelect(path, node)}
+          className="my-0.5 rounded px-1.5 py-1 text-left text-xs hover:bg-indigo-50 hover:text-indigo-700"
+        >
+          <span className="font-medium">{label}</span>
+          <span className="ml-2 text-slate-400">{primitive ? String(node) : Array.isArray(node) ? '[ ]' : '{ }'}</span>
+        </button>
+        {!primitive && Object.entries(node as Record<string, unknown>).map(([key, child]) => {
+          const childPath = childPathFor(path, key, Array.isArray(node))
+          return render(child, childPath, key)
+        })}
+      </div>
+    )
+  }
+  return <div className="max-h-64 overflow-auto rounded-md border border-slate-200 bg-white p-2">{render(value, '$', '$')}</div>
 }
 
 function Section({
@@ -166,6 +194,10 @@ function KVConditionEditor({
 
 export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
   const [rule, setRule] = useState<MockRule>(initial)
+  const [curlText, setCurlText] = useState('')
+  const [curlError, setCurlError] = useState<string | null>(null)
+  const [pendingHeaders, setPendingHeaders] = useState<Array<{ key: string; value: string; apply: boolean }>>([])
+  const [responseSample, setResponseSample] = useState('')
   const mc = rule.matchCondition
 
   const setMC = (patch: Partial<MatchCondition>) =>
@@ -173,6 +205,37 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
 
   const setUrl = (patch: Partial<UrlMatchCondition>) =>
     setMC({ url: { ...(mc.url ?? { type: 'contains', value: '' }), ...patch } })
+
+  const importCurl = () => {
+    try {
+      const parsed = parseCurl(curlText)
+      let body = parsed.body
+      try { if (body) body = JSON.stringify(JSON.parse(body), null, 2) } catch { /* keep form encoded/text */ }
+      const urlObj = new URL(parsed.url)
+      const queryParams = Array.from(urlObj.searchParams.entries()).map(([key, value]) => ({ key, operator: 'equals' as const, value }))
+      setRule(r => ({
+        ...r,
+        name: r.name || `${parsed.method} ${urlObj.pathname}`,
+        matchCondition: {
+          ...r.matchCondition,
+          url: { type: 'equals', value: parsed.url.split('?')[0] },
+          methods: [parsed.method],
+          queryParams,
+          requestBody: body ? { type: 'jsonpath', expression: '', sampleJson: body } : r.matchCondition.requestBody,
+        },
+      }))
+      setPendingHeaders(parsed.headers.map(header => ({ ...header, apply: false })))
+      setCurlError(null)
+    } catch (e: unknown) {
+      setCurlError((e as Error).message || 'curl 解析失败')
+    }
+  }
+
+  const applySelectedHeaders = () => {
+    const selected = pendingHeaders.filter(h => h.apply).map(({ key, value }) => ({ key, operator: 'equals' as const, value }))
+    setMC({ requestHeaders: [...(mc.requestHeaders ?? []), ...selected] })
+    setPendingHeaders([])
+  }
 
   // ===== Modifications helpers =====
   const mods = rule.modifications
@@ -228,6 +291,50 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
             <Input type="number" value={rule.priority} onChange={e => setRule(r => ({ ...r, priority: Number(e.target.value) }))} />
           </div>
         </div>
+      </Section>
+
+      {/* curl 导入 */}
+      <Section title="curl 自动导入">
+        <div className="space-y-2">
+          <Label>粘贴 curl 命令</Label>
+          <Textarea
+            rows={4}
+            value={curlText}
+            onChange={e => setCurlText(e.target.value)}
+            placeholder={'curl \'https://api.example.com/users?id=1\' -X POST -H \'Content-Type: application/json\' -d \'{"name":"Tom"}\''}
+            className="font-mono"
+          />
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={importCurl} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">解析并填充</button>
+            {curlError && <span className="text-xs text-rose-600">{curlError}</span>}
+          </div>
+        </div>
+        {pendingHeaders.length > 0 && (
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <Label>选择要应用到匹配条件的请求头</Label>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setPendingHeaders(current => current.map(h => ({ ...h, apply: true })))} className="text-xs text-indigo-600 hover:underline">全选</button>
+                <button type="button" onClick={() => setPendingHeaders(current => current.map(h => ({ ...h, apply: false })))} className="text-xs text-slate-500 hover:underline">全不选</button>
+                <button type="button" onClick={applySelectedHeaders} className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">添加选中</button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {pendingHeaders.map((header, i) => (
+                <label key={`${header.key}-${i}`} className="flex cursor-pointer items-center gap-2 rounded-md bg-white px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={header.apply}
+                    onChange={e => setPendingHeaders(current => current.map((h, idx) => idx === i ? { ...h, apply: e.target.checked } : h))}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                  />
+                  <span className="font-medium text-slate-700">{header.key}</span>
+                  <span className="min-w-0 truncate text-slate-500">{header.value}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </Section>
 
       {/* 匹配条件 */}
@@ -290,8 +397,8 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
           <Label>请求体匹配</Label>
           <div className="flex gap-2 mb-1.5">
             <Select
-              value={mc.requestBody?.type ?? 'contains'}
-              onChange={e => setMC({ requestBody: { ...(mc.requestBody ?? { type: 'contains', expression: '' }), type: e.target.value as BodyMatchCondition['type'] } })}
+              value={mc.requestBody?.type ?? 'jsonpath'}
+              onChange={e => setMC({ requestBody: { ...(mc.requestBody ?? { type: 'jsonpath', expression: '' }), type: e.target.value as BodyMatchCondition['type'] } })}
             >
               {BODY_MATCH_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </Select>
@@ -299,17 +406,41 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
           <Textarea
             rows={4}
             value={mc.requestBody?.expression ?? ''}
-            onChange={e => setMC({ requestBody: { ...(mc.requestBody ?? { type: 'contains', expression: '' }), expression: e.target.value } })}
+            onChange={e => setMC({ requestBody: { ...(mc.requestBody ?? { type: 'jsonpath', expression: '' }), expression: e.target.value } })}
             placeholder={mc.requestBody?.type === 'jsonpath' ? '$.data.userId' : '匹配表达式'}
             className="min-h-[96px] resize-y font-mono"
           />
           {mc.requestBody?.type === 'jsonpath' && (
-            <Input
-              value={mc.requestBody?.expectedValue ?? ''}
-              onChange={e => setMC({ requestBody: { ...mc.requestBody!, expectedValue: e.target.value } })}
-              placeholder="期望值（可选）"
-              className="mt-2"
-            />
+            <div className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+              <div>
+                <Label>样例返回（用于图形化选择 JSONPath）</Label>
+                <Textarea
+                  rows={5}
+                  value={mc.requestBody.sampleJson ?? ''}
+                  onChange={e => setMC({ requestBody: { ...mc.requestBody!, sampleJson: e.target.value } })}
+                  placeholder='粘贴原先的 JSON 样例返回，例如 {"data":{"id":1}}'
+                  className="font-mono"
+                />
+              </div>
+              {mc.requestBody.sampleJson?.trim() && (() => {
+                try {
+                  const sample = JSON.parse(mc.requestBody.sampleJson)
+                  return (
+                    <JsonPathTree
+                      value={sample}
+                      onSelect={(path, node) => setMC({ requestBody: { ...mc.requestBody!, expression: path, expectedValue: node !== null && typeof node !== 'object' ? String(node) : '' } })}
+                    />
+                  )
+                } catch {
+                  return <p className="text-xs text-rose-600">样例返回不是有效 JSON，无法生成路径。</p>
+                }
+              })()}
+              <Input
+                value={mc.requestBody?.expectedValue ?? ''}
+                onChange={e => setMC({ requestBody: { ...mc.requestBody!, expectedValue: e.target.value } })}
+                placeholder="期望值（可选；选择节点后自动填充）"
+              />
+            </div>
           )}
         </div>
       </Section>
@@ -374,6 +505,37 @@ export default function RuleEditor({ rule: initial, onSave, onCancel }: Props) {
         {/* 修改 JSON 字段 */}
         {modifyMod && (
           <div className="animate-fade-in rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+            <div className="mb-4">
+              <Label>样例返回（可点击节点生成 JSONPath）</Label>
+              <Textarea
+                rows={5}
+                value={responseSample}
+                onChange={e => setResponseSample(e.target.value)}
+                placeholder='粘贴原先的 JSON 返回，例如 {"data":{"name":"Tom"}}'
+                className="font-mono"
+              />
+              {responseSample.trim() && (() => {
+                try {
+                  return (
+                    <div className="mt-2">
+                      <JsonPathTree
+                        value={JSON.parse(responseSample)}
+                        onSelect={path => {
+                          const next = [...modifyMod.modifications]
+                          const emptyIndex = next.findIndex(m => !m.path)
+                          const item = { path, action: 'set' as const, value: '' }
+                          if (emptyIndex >= 0) next[emptyIndex] = { ...next[emptyIndex], path }
+                          else next.push(item)
+                          setMod({ ...modifyMod, modifications: next })
+                        }}
+                      />
+                    </div>
+                  )
+                } catch {
+                  return <p className="mt-1 text-xs text-rose-600">样例返回不是有效 JSON，无法生成路径。</p>
+                }
+              })()}
+            </div>
             <div className="mb-2 flex items-center justify-between">
               <Label>JSON 字段修改</Label>
               <button

@@ -15,6 +15,8 @@ export interface BodyMatchCondition {
   type: 'contains' | 'jsonpath' | 'regex'
   expression: string
   expectedValue?: string
+  /** Optional sample JSON used by the editor's JSONPath picker. */
+  sampleJson?: string
 }
 
 export interface MatchCondition {

@@ -9,7 +9,10 @@ function createEmptyRule(): MockRule {
     name: '',
     enabled: true,
     priority: 0,
-    matchCondition: { url: { type: 'contains', value: '' } },
+    matchCondition: {
+      url: { type: 'contains', value: '' },
+      requestBody: { type: 'jsonpath', expression: '' },
+    },
     modifications: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
